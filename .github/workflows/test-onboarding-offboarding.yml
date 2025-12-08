@@ -35,85 +35,111 @@ jobs:
           echo "reviewer=${selected_reviewer}" >> $GITHUB_OUTPUT
           echo "Selected reviewer: ${selected_reviewer}"
       
-      - name: Create test issue
+      - name: Create test issue from template
         id: create-issue
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.ACTION_DISPATCH_PAT }}
           script: |
+            const fs = require('fs');
+            const path = require('path');
             const reviewer = '${{ steps.select-reviewer.outputs.reviewer }}';
             
-            // Create issue body matching the add_new_profile template
-            const issueBody = `### Welcome Message
+            // --- CONFIGURATION ---
+            // Update this to match your actual template filename
+            const templatePath = '.github/ISSUE_TEMPLATE/add_new_profile.md';
             
-            :clap: Welcome! :clap: [The README](https://github.com/nmfs-ost/on-off-boarding) describes the onboarding and offboarding processes for new collaborators of the Office of Science and Technology (OST). 
-            Please feel free to email your Supervisor or Project Lead if you prefer to use email instead of this GitHub issue to track your onboarding and offboarding progress.
-            
-            ### Collaborator's Full Name
-            
-            Test User (Automated Test)
-            
-            ### Desired Onboarding Date
-            
-            ${new Date().toISOString().split('T')[0]}
-            
-            ### Desired Offboarding Date
-            
-            ${new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
-            
-            ### Collaborator's Title and Affiliation
-            
-            Software Test Engineer, Automated Testing Program
-            
-            ### Biography
-            
-            This is an automated test profile created to validate the onboarding and offboarding workflows in this repository.
-            
-            ### Professional Email
-            
-            test.user@noaa.gov
-            
-            ### GitHub Username
-            
-            test-user-automated
-            
-            ### How to Use This Issue
-            
-            :bulb: **Tips**
-            - After this issue is created, onboarding or offboarding checklists may be added. Please mark items as complete as you progress.
-            - You can edit this issue to add more details about your progress by clicking the "..." button in the top-right corner of the issue. 
-            - If you have any questions or encounter any problems, please feel free to comment on this issue. 
-            
-            :tada: :tada: :tada: Thank you for your cooperation and welcome aboard!
-            
-            ---
-            
-            **Note: This is an automated test issue created by the test workflow.**`;
-            
-            let issue;
+            // Define rules for filling out data based on Header keywords
+            // The script looks for headers (###) containing these words
+            const dataRules = {
+              'name': 'Test User (Automated)',
+              'email': 'test.user@email.com',
+              'username': 'test-user-automated',
+              'onboarding': new Date().toISOString().split('T')[0], // Today
+              'offboarding': new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // +90 days
+              'title': 'Research Fish BIologist',
+              'affiliation': 'Automated Testing Program',
+              'bio': 'This is an automated test profile created to validate workflows.',
+              'default': 'Automated test response.' // Fallback for unknown headers
+            };
+            // ---------------------
+
             try {
-              issue = await github.rest.issues.create({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                title: '[Profile]: Test User (Automated Test)',
-                body: issueBody,
-                labels: ['profile', 'automated-test'],
-                assignees: [reviewer]
-              });
+              // 1. Read the template file
+              if (!fs.existsSync(templatePath)) {
+                throw new Error(`Template file not found at ${templatePath}`);
+              }
+              let content = fs.readFileSync(templatePath, 'utf8');
+
+              // 2. Remove YAML Frontmatter (the metadata at the top between --- and ---)
+              content = content.replace(/^---\n[\s\S]*?\n---\n/, '');
+
+              // Define the "Red Flag" Warning
+              const redFlag = `> [!CAUTION]
+              > **AUTOMATED TEST RUN**
+              >
+              > **Reviewer (@${reviewer}):** Please review the profile and checklist below to ensure they display correctly. 
+              >
+              > This issue was created automatically to test the onboarding/offboarding workflows.`;
+
+              // 3. Process the content to fill in blanks
+              // We split by "### " to find sections
+              const sections = content.split(/\n### /);
+              
+              // Rebuild the body
+              let newBody = sections[0]; // The part before the first header (usually empty or welcome text)
+              
+              for (let i = 1; i < sections.length; i++) {
+                const lines = sections[i].split('\n');
+                const headerTitle = lines[0].trim(); // The text immediately after ###
+                
+                // Determine what data to put here based on the header title
+                let fillValue = dataRules['default'];
+                const lowerTitle = headerTitle.toLowerCase();
+                
+                for (const [key, value] of Object.entries(dataRules)) {
+                  if (lowerTitle.includes(key)) {
+                    fillValue = value;
+                    break;
+                  }
+                }
+                
+                // Reconstruct the section:
+                // Header + Original content (instructions) + Our Answer
+                // We add two newlines to ensure separation
+                newBody += `\n### ${headerTitle}\n\n${lines.slice(1).join('\n')}\n\n**${fillValue}**`;
+              }
+              
+              // 4. Create the issue
+              let issue;
+              const issueTitle = '[Test Profile]: Test User (Automated Test)';
+              const labels = ['automated-test'];
+
+              try {
+                issue = await github.rest.issues.create({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  title: issueTitle,
+                  body: newBody,
+                  labels: labels,
+                  assignees: [reviewer]
+                });
+              } catch (assignError) {
+                console.log(`Warning: Could not assign reviewer: ${assignError.message}`);
+                issue = await github.rest.issues.create({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  title: issueTitle,
+                  body: newBody,
+                  labels: labels
+                });
+              }
+              
+              console.log(`Created test issue #${issue.data.number} using template.`);
+              return issue.data.number;
+
             } catch (error) {
-              console.log(`Warning: Could not assign reviewer ${reviewer}: ${error.message}`);
-              // Create issue without assignee if assignment fails
-              issue = await github.rest.issues.create({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                title: '[Profile]: Test User (Automated Test)',
-                body: issueBody,
-                labels: ['profile', 'automated-test']
-              });
+              core.setFailed(`Failed to create issue from template: ${error.message}`);
             }
-            
-            console.log(`Created test issue #${issue.data.number}`);
-            return issue.data.number;
       
       - name: Get onboard workflows
         id: get-onboard-workflows
