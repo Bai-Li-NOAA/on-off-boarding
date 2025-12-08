@@ -140,7 +140,6 @@ jobs:
             console.log(`Testing ${workflows.length} onboarding workflows on issue #${issueNumber}`);
             
             for (const workflow of workflows) {
-              
               const command = `/onboard-${workflow}`;
               console.log(`Posting command: ${command}`);
               
@@ -170,7 +169,6 @@ jobs:
             console.log(`Testing ${workflows.length} offboarding workflows on issue #${issueNumber}`);
             
             for (const workflow of workflows) {
-              
               const command = `/offboard-${workflow}`;
               console.log(`Posting command: ${command}`);
               
