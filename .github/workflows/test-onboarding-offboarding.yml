@@ -71,7 +71,8 @@ jobs:
             >
             > **Reviewer (@${reviewer}):** Please review the profile and checklist below to ensure they display correctly. 
             >
-            > This issue was created automatically to test the onboarding/offboarding workflows.\n\n`;
+            > This issue was created automatically to test the onboarding/offboarding workflows.\n\n
+            > This issue can be closed after verification.\n\n`;
 
               // 2. Parse the YAML Body manually (Since js-yaml is not available by default)
               // We split the file into blocks starting with "- type:"
@@ -264,11 +265,14 @@ jobs:
               ...offboardWorkflows.map(w => `- /offboard-${w}`)
             ].join('\n');
             
+            // 3 minutes delay (3 * 60 * 1000 ms)
+            await new Promise(resolve => setTimeout(resolve, 180000));
+
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: issueNumber,
-              body: `:white_check_mark: **Automated workflow testing completed**\n\nAll onboarding and offboarding workflow commands have been posted to this issue. Please verify that the workflows executed correctly by checking the comments above.\n\n${workflowList}\n\n**Workflow run:** ${runUrl}\n\n**Note:** This test issue can be closed after verification.`
+              body: `:white_check_mark: **Automated workflow testing completed**\n\nAll onboarding and offboarding workflow commands have been posted to this issue. Please verify that the workflows executed correctly by checking the comments above.\n\n${workflowList}\n\n**Workflow run:** ${runUrl}\n\n`
             });
             
             console.log(`Test completed for issue #${issueNumber}`);
