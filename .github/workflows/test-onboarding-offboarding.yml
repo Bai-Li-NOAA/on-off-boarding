@@ -44,82 +44,116 @@ jobs:
             const path = require('path');
             const reviewer = '${{ steps.select-reviewer.outputs.reviewer }}';
             
-            // --- CONFIGURATION ---
-            // Update this to match your actual template filename
+            // CONFIGURATION 
             const templatePath = '.github/ISSUE_TEMPLATE/add_new_profile.yml';
             
-            // Define rules for filling out data based on Header keywords
-            // The script looks for headers (###) containing these words
-            const dataRules = {
-              'name': 'Test User (Automated)',
+            // Map the 'id' from the YAML file to the test data
+            const fieldData = {
+              'profile-name': 'Test User (Automated)',
               'email': 'test.user@email.com',
-              'username': 'test-user-automated',
-              'onboarding': new Date().toISOString().split('T')[0], // Today
-              'offboarding': new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // +90 days
-              'title': 'Research Fish BIologist',
-              'affiliation': 'Automated Testing Program',
-              'bio': 'This is an automated test profile created to validate workflows.',
-              'default': 'Automated test response.' // Fallback for unknown headers
+              'github-username': 'test-user-automated',
+              'onboarding-date': new Date().toISOString().split('T')[0],
+              'offboarding-date': new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+              'role-affiliation': 'Fishery Biologist, ST4 National Stock Assessment Program',
+              'biography': 'This is an automated test profile created to validate workflows.',
             };
             // ---------------------
 
             try {
-              // 1. Read the template file
               if (!fs.existsSync(templatePath)) {
                 throw new Error(`Template file not found at ${templatePath}`);
               }
-              let content = fs.readFileSync(templatePath, 'utf8');
+              const content = fs.readFileSync(templatePath, 'utf8');
 
-              // 2. Remove YAML Frontmatter (the metadata at the top between --- and ---)
-              content = content.replace(/^---\n[\s\S]*?\n---\n/, '');
+              // 1. Construct the Red Flag Warning
+              let markdownBody = `> [!CAUTION]
+            > **AUTOMATED TEST RUN**
+            >
+            > **Reviewer (@${reviewer}):** Please review the profile and checklist below to ensure they display correctly. 
+            >
+            > This issue was created automatically to test the onboarding/offboarding workflows.\n\n`;
 
-              // Define the "Red Flag" Warning
-              const redFlag = `> [!CAUTION]
-              > **AUTOMATED TEST RUN**
-              >
-              > **Reviewer (@${reviewer}):** Please review the profile and checklist below to ensure they display correctly. 
-              >
-              > This issue was created automatically to test the onboarding/offboarding workflows.`;
-
-              // 3. Process the content to fill in blanks
-              // We split by "### " to find sections
-              const sections = content.split(/\n### /);
+              // 2. Parse the YAML Body manually (Since js-yaml is not available by default)
+              // We split the file into blocks starting with "- type:"
+              // First, isolate the 'body:' section
+              const bodyParts = content.split(/^body:/m);
+              if (bodyParts.length < 2) throw new Error("Could not find 'body:' section in YAML");
               
-              // Rebuild the body
-              let newBody = sections[0]; // The part before the first header (usually empty or welcome text)
+              const rawBody = bodyParts[1];
               
-              for (let i = 1; i < sections.length; i++) {
-                const lines = sections[i].split('\n');
-                const headerTitle = lines[0].trim(); // The text immediately after ###
+              // Regex to find each form element block
+              // Matches "- type:" followed by content until the next "- type:"
+              const blockRegex = /-\s+type:\s+(\w+)[\s\S]*?(?=(?:-\s+type:|$))/g;
+              let match;
+
+              while ((match = blockRegex.exec(rawBody)) !== null) {
+                const block = match[0];
+                const type = match[1];
+
+                // Extract 'label' (The question/header)
+                const labelMatch = block.match(/label:\s*(.*)/);
+                const label = labelMatch ? labelMatch[1].trim() : null;
+
+                // Extract 'id' (To look up our dummy data)
+                const idMatch = block.match(/id:\s*(.*)/);
+                const id = idMatch ? idMatch[1].trim() : null;
+
+                // Extract 'value' (Pre-filled text, e.g., Welcome Message)
+                // We look for 'value: |' and grab the indented block
+                let staticValue = null;
+                if (block.includes('value: |')) {
+                   const valueParts = block.split('value: |');
+                   if (valueParts[1]) {
+                     // Grab lines until we hit a line that is NOT indented or empty
+                     const lines = valueParts[1].split('\n').slice(1); // skip the first empty newline
+                     const validLines = [];
+                     for (const line of lines) {
+                       // Stop if we hit a key like "validations:" or "type:" (less indented)
+                       if (line.trim().length > 0 && !line.startsWith('  ')) break;
+                       validLines.push(line);
+                     }
+                     staticValue = validLines.join('\n').trim();
+                   }
+                }
+
+                // --- BUILD THE MARKDOWN ---
                 
-                // Determine what data to put here based on the header title
-                let fillValue = dataRules['default'];
-                const lowerTitle = headerTitle.toLowerCase();
-                
-                for (const [key, value] of Object.entries(dataRules)) {
-                  if (lowerTitle.includes(key)) {
-                    fillValue = value;
-                    break;
+                // Case A: It's a "markdown" type (Info block, no input)
+                if (type === 'markdown' && staticValue) {
+                  markdownBody += `${staticValue}\n\n`;
+                  continue;
+                }
+
+                // Case B: It's an input/textarea
+                if (label) {
+                  markdownBody += `### ${label}\n\n`;
+                  
+                  // Priority 1: Use our dummy data from 'fieldData'
+                  if (id && fieldData[id]) {
+                    markdownBody += `${fieldData[id]}\n\n`;
+                  } 
+                  // Priority 2: Use the static value from the template (e.g., Welcome Message)
+                  else if (staticValue) {
+                     markdownBody += `${staticValue}\n\n`;
+                  }
+                  // Priority 3: Fallback
+                  else {
+                    markdownBody += `_No test data provided for ${id || 'this field'}_\n\n`;
                   }
                 }
-                
-                // Reconstruct the section:
-                // Header + Original content (instructions) + Our Answer
-                // We add two newlines to ensure separation
-                newBody += `\n### ${headerTitle}\n\n${lines.slice(1).join('\n')}\n\n**${fillValue}**`;
               }
-              
-              // 4. Create the issue
-              let issue;
+
+              // 3. Create the issue
               const issueTitle = '[Test Profile]: Test User (Automated Test)';
               const labels = ['automated-test'];
-
+              
+              let issue;
               try {
                 issue = await github.rest.issues.create({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   title: issueTitle,
-                  body: newBody,
+                  body: markdownBody,
                   labels: labels,
                   assignees: [reviewer]
                 });
@@ -129,12 +163,12 @@ jobs:
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   title: issueTitle,
-                  body: newBody,
+                  body: markdownBody,
                   labels: labels
                 });
               }
               
-              console.log(`Created test issue #${issue.data.number} using template.`);
+              console.log(`Created test issue #${issue.data.number}`);
               return issue.data.number;
 
             } catch (error) {
