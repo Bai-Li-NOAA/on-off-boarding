@@ -46,7 +46,7 @@ jobs:
             
             // --- CONFIGURATION ---
             // Update this to match your actual template filename
-            const templatePath = '.github/ISSUE_TEMPLATE/add_new_profile.md';
+            const templatePath = '.github/ISSUE_TEMPLATE/add_new_profile.yml';
             
             // Define rules for filling out data based on Header keywords
             // The script looks for headers (###) containing these words
