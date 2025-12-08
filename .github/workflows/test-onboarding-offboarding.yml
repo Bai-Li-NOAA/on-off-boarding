@@ -89,14 +89,27 @@ jobs:
             
             **Note: This is an automated test issue created by the test workflow.**`;
             
-            const issue = await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: '[Profile]: Test User (Automated Test)',
-              body: issueBody,
-              labels: ['profile', 'automated-test'],
-              assignees: [reviewer]
-            });
+            let issue;
+            try {
+              issue = await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: '[Profile]: Test User (Automated Test)',
+                body: issueBody,
+                labels: ['profile', 'automated-test'],
+                assignees: [reviewer]
+              });
+            } catch (error) {
+              console.log(`Warning: Could not assign reviewer ${reviewer}: ${error.message}`);
+              // Create issue without assignee if assignment fails
+              issue = await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: '[Profile]: Test User (Automated Test)',
+                body: issueBody,
+                labels: ['profile', 'automated-test']
+              });
+            }
             
             console.log(`Created test issue #${issue.data.number}`);
             return issue.data.number;
@@ -105,7 +118,7 @@ jobs:
         id: get-onboard-workflows
         run: |
           cd .github/workflows
-          onboard_workflows=$(ls onboard-*.yml | sed 's/onboard-//' | sed 's/.yml//' | tr '\n' ' ')
+          onboard_workflows=$(ls onboard-*.yml onboard-*.yaml 2>/dev/null | sed 's/onboard-//' | sed 's/\.yml$//' | sed 's/\.yaml$//' | tr '\n' ' ' || echo "")
           echo "workflows=${onboard_workflows}" >> $GITHUB_OUTPUT
           echo "Onboard workflows: ${onboard_workflows}"
       
@@ -113,7 +126,7 @@ jobs:
         id: get-offboard-workflows
         run: |
           cd .github/workflows
-          offboard_workflows=$(ls offboard-*.yml | sed 's/offboard-//' | sed 's/.yml//' | tr '\n' ' ')
+          offboard_workflows=$(ls offboard-*.yml offboard-*.yaml 2>/dev/null | sed 's/offboard-//' | sed 's/\.yml$//' | sed 's/\.yaml$//' | tr '\n' ' ' || echo "")
           echo "workflows=${offboard_workflows}" >> $GITHUB_OUTPUT
           echo "Offboard workflows: ${offboard_workflows}"
       
@@ -122,12 +135,11 @@ jobs:
         with:
           script: |
             const issueNumber = ${{ steps.create-issue.outputs.result }};
-            const workflows = '${{ steps.get-onboard-workflows.outputs.workflows }}'.trim().split(' ');
+            const workflows = '${{ steps.get-onboard-workflows.outputs.workflows }}'.trim().split(' ').filter(w => w.length > 0);
             
             console.log(`Testing ${workflows.length} onboarding workflows on issue #${issueNumber}`);
             
             for (const workflow of workflows) {
-              if (!workflow) continue;
               
               const command = `/onboard-${workflow}`;
               console.log(`Posting command: ${command}`);
@@ -153,12 +165,11 @@ jobs:
         with:
           script: |
             const issueNumber = ${{ steps.create-issue.outputs.result }};
-            const workflows = '${{ steps.get-offboard-workflows.outputs.workflows }}'.trim().split(' ');
+            const workflows = '${{ steps.get-offboard-workflows.outputs.workflows }}'.trim().split(' ').filter(w => w.length > 0);
             
             console.log(`Testing ${workflows.length} offboarding workflows on issue #${issueNumber}`);
             
             for (const workflow of workflows) {
-              if (!workflow) continue;
               
               const command = `/offboard-${workflow}`;
               console.log(`Posting command: ${command}`);
@@ -180,12 +191,22 @@ jobs:
           script: |
             const issueNumber = ${{ steps.create-issue.outputs.result }};
             const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const onboardWorkflows = '${{ steps.get-onboard-workflows.outputs.workflows }}'.trim().split(' ').filter(w => w.length > 0);
+            const offboardWorkflows = '${{ steps.get-offboard-workflows.outputs.workflows }}'.trim().split(' ').filter(w => w.length > 0);
+            
+            const workflowList = [
+              '**Onboarding workflows tested** (' + onboardWorkflows.length + '):',
+              ...onboardWorkflows.map(w => `- /onboard-${w}`),
+              '',
+              '**Offboarding workflows tested** (' + offboardWorkflows.length + '):',
+              ...offboardWorkflows.map(w => `- /offboard-${w}`)
+            ].join('\n');
             
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: issueNumber,
-              body: `:white_check_mark: **Automated workflow testing completed**\n\nAll onboarding and offboarding workflow commands have been posted to this issue. Please verify that the workflows executed correctly by checking the comments above.\n\n**Workflow run:** ${runUrl}\n\n**Note:** This test issue can be closed after verification.`
+              body: `:white_check_mark: **Automated workflow testing completed**\n\nAll onboarding and offboarding workflow commands have been posted to this issue. Please verify that the workflows executed correctly by checking the comments above.\n\n${workflowList}\n\n**Workflow run:** ${runUrl}\n\n**Note:** This test issue can be closed after verification.`
             });
             
             console.log(`Test completed for issue #${issueNumber}`);
