@@ -96,6 +96,25 @@ flowchart TD;
     click A "https://github.com/nmfs-ost/on-off-boarding/issues";
 ```
 
+## 🧪 Automated Testing
+
+This repository includes an automated testing workflow that validates all onboarding and offboarding workflows to ensure they continue to function correctly. The test workflow:
+
+- **Triggers automatically** when workflow files are modified in the `.github/workflows/` directory
+- **Runs monthly** (on the 1st of each month) to catch any regressions
+- **Can be triggered manually** via the GitHub Actions interface for on-demand testing
+
+### How the Testing Works
+
+1. Creates a test issue using the "Add new profile" template with sample profile information
+2. Randomly assigns one of the project maintainers as a reviewer
+3. Sequentially posts slash commands to trigger each onboarding workflow (e.g., `/onboard-nsap`, `/onboard-workflows`)
+4. Pauses 5 seconds between commands to ensure reliable workflow triggering
+5. After all onboarding workflows complete, triggers all offboarding workflows (e.g., `/offboard-workflows`, `/offboard-nsap`)
+6. Adds a completion comment with a link to the workflow run
+
+Test issues are labeled with `automated-test` for easy identification and can be closed after verification.
+
 ## 📣 Project Contacts
 
 ### 🎏 National Stock Assessment Program (NSAP)
