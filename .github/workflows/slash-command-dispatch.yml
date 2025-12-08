@@ -16,6 +16,9 @@ jobs:
         with:
           # Must link a personal PAT to this repository
           token: ${{ secrets.ACTION_DISPATCH_PAT }}
+          # This permission allows anyone with Repo Write access to run commands.
+          # This generally covers "Assignees" provided they have write access.
+          permission: write
           # List all of the commands that you want to work in lowercase
           # Where onboarding options are listed first and then offboarding
           commands: |
