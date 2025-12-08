@@ -47,7 +47,6 @@ jobs:
             // CONFIGURATION 
             const templatePath = '.github/ISSUE_TEMPLATE/add_new_profile.yml';
             
-            // Map the 'id' from the YAML file to the test data
             const fieldData = {
               'profile-name': 'Test User (Automated)',
               'email': 'test.user@email.com',
@@ -57,7 +56,6 @@ jobs:
               'role-affiliation': 'Fishery Biologist, ST4 National Stock Assessment Program',
               'biography': 'This is an automated test profile created to validate workflows.',
             };
-            // ---------------------
 
             try {
               if (!fs.existsSync(templatePath)) {
@@ -69,21 +67,15 @@ jobs:
               let markdownBody = `> [!CAUTION]
             > **AUTOMATED TEST RUN**
             >
-            > **Reviewer (@${reviewer}):** Please review the profile and checklist below to ensure they display correctly. 
-            >
-            > This issue was created automatically to test the onboarding/offboarding workflows.\n\n
-            > This issue can be closed after verification.\n\n`;
+            > **Reviewer (@${reviewer}):** Please review the profile and checklist below to ensure they display correctly. This issue was created automatically to test the onboarding/offboarding workflows.\n\n`;
 
-              // 2. Parse the YAML Body manually (Since js-yaml is not available by default)
-              // We split the file into blocks starting with "- type:"
-              // First, isolate the 'body:' section
+              // 2. Parse the YAML Body
               const bodyParts = content.split(/^body:/m);
               if (bodyParts.length < 2) throw new Error("Could not find 'body:' section in YAML");
               
               const rawBody = bodyParts[1];
               
-              // Regex to find each form element block
-              // Matches "- type:" followed by content until the next "- type:"
+              // Matches "- type:" followed by content until the next "- type:" or end of file
               const blockRegex = /-\s+type:\s+(\w+)[\s\S]*?(?=(?:-\s+type:|$))/g;
               let match;
 
@@ -91,54 +83,62 @@ jobs:
                 const block = match[0];
                 const type = match[1];
 
-                // Extract 'label' (The question/header)
                 const labelMatch = block.match(/label:\s*(.*)/);
                 const label = labelMatch ? labelMatch[1].trim() : null;
 
-                // Extract 'id' (To look up our dummy data)
                 const idMatch = block.match(/id:\s*(.*)/);
                 const id = idMatch ? idMatch[1].trim() : null;
 
-                // Extract 'value' (Pre-filled text, e.g., Welcome Message)
-                // We look for 'value: |' and grab the indented block
+                // --- IMPROVED VALUE PARSING LOGIC ---
                 let staticValue = null;
                 if (block.includes('value: |')) {
                    const valueParts = block.split('value: |');
                    if (valueParts[1]) {
-                     // Grab lines until we hit a line that is NOT indented or empty
-                     const lines = valueParts[1].split('\n').slice(1); // skip the first empty newline
+                     const lines = valueParts[1].split('\n').slice(1);
                      const validLines = [];
+                     let baseIndent = -1;
+
                      for (const line of lines) {
-                       // Stop if we hit a key like "validations:" or "type:" (less indented)
-                       if (line.trim().length > 0 && !line.startsWith('  ')) break;
+                       // 1. Skip checks for empty lines (keep them for formatting)
+                       if (line.trim().length === 0) {
+                         validLines.push('');
+                         continue;
+                       }
+
+                       // 2. Calculate indentation of current line
+                       const currentIndent = line.search(/\S/);
+
+                       // 3. Establish the "Base Indentation" from the first non-empty line
+                       if (baseIndent === -1) {
+                         baseIndent = currentIndent;
+                       }
+
+                       // 4. STOP if indentation drops below the base (This detects 'validations:')
+                       if (currentIndent < baseIndent) {
+                         break;
+                       }
+
                        validLines.push(line);
                      }
                      staticValue = validLines.join('\n').trim();
                    }
                 }
+                // ------------------------------------
 
-                // --- BUILD THE MARKDOWN ---
-                
-                // Case A: It's a "markdown" type (Info block, no input)
+                // --- BUILD MARKDOWN ---
                 if (type === 'markdown' && staticValue) {
                   markdownBody += `${staticValue}\n\n`;
                   continue;
                 }
 
-                // Case B: It's an input/textarea
                 if (label) {
                   markdownBody += `### ${label}\n\n`;
                   
-                  // Priority 1: Use our dummy data from 'fieldData'
                   if (id && fieldData[id]) {
                     markdownBody += `${fieldData[id]}\n\n`;
-                  } 
-                  // Priority 2: Use the static value from the template (e.g., Welcome Message)
-                  else if (staticValue) {
-                     markdownBody += `${staticValue}\n\n`;
-                  }
-                  // Priority 3: Fallback
-                  else {
+                  } else if (staticValue) {
+                      markdownBody += `${staticValue}\n\n`;
+                  } else {
                     markdownBody += `_No test data provided for ${id || 'this field'}_\n\n`;
                   }
                 }
