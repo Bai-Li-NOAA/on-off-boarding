@@ -67,7 +67,9 @@ jobs:
               let markdownBody = `> [!CAUTION]
             > **AUTOMATED TEST RUN**
             >
-            > **Reviewer (@${reviewer}):** Please review the profile and checklist below to ensure they display correctly. This issue was created automatically to test the onboarding/offboarding workflows.\n\n`;
+            > **Reviewer (@${reviewer}):** Please review the profile and checklist below to ensure they display correctly. 
+            >
+            > This issue was created automatically to test the onboarding/offboarding workflows.\n\n`;
 
               // 2. Parse the YAML Body
               const bodyParts = content.split(/^body:/m);
@@ -89,7 +91,6 @@ jobs:
                 const idMatch = block.match(/id:\s*(.*)/);
                 const id = idMatch ? idMatch[1].trim() : null;
 
-                // --- IMPROVED VALUE PARSING LOGIC ---
                 let staticValue = null;
                 if (block.includes('value: |')) {
                    const valueParts = block.split('value: |');
@@ -99,7 +100,7 @@ jobs:
                      let baseIndent = -1;
 
                      for (const line of lines) {
-                       // 1. Skip checks for empty lines (keep them for formatting)
+                       // 1. Skip checks for empty lines, just add them
                        if (line.trim().length === 0) {
                          validLines.push('');
                          continue;
@@ -113,12 +114,14 @@ jobs:
                          baseIndent = currentIndent;
                        }
 
-                       // 4. STOP if indentation drops below the base (This detects 'validations:')
+                       // 4. STOP if indentation drops below the base (detects next YAML key)
                        if (currentIndent < baseIndent) {
                          break;
                        }
 
-                       validLines.push(line);
+                       // 5. CRITICAL FIX: Remove the indentation (slice the string)
+                       // This prevents Markdown from thinking it's a code block
+                       validLines.push(line.slice(baseIndent));
                      }
                      staticValue = validLines.join('\n').trim();
                    }
