@@ -30,7 +30,7 @@ jobs:
       - name: Select random reviewer
         id: select-reviewer
         run: |
-          reviewers=("Bai-Li-NOAA" "kellijohnson-NOAA" "Schiano-NOAA")
+          reviewers=("Bai-Li-NOAA")
           selected_reviewer=${reviewers[$RANDOM % ${#reviewers[@]}]}
           echo "reviewer=${selected_reviewer}" >> $GITHUB_OUTPUT
           echo "Selected reviewer: ${selected_reviewer}"
@@ -208,4 +208,3 @@ jobs:
             });
             
             console.log(`Test completed for issue #${issueNumber}`);
-            
