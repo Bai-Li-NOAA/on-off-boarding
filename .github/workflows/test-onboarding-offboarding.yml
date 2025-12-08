@@ -1,0 +1,211 @@
+name: Test Onboarding and Offboarding Workflows
+
+on:
+  # Trigger on changes to workflow files
+  push:
+    paths:
+      - '.github/workflows/*.yml'
+      - '.github/workflows/*.yaml'
+  pull_request:
+    paths:
+      - '.github/workflows/*.yml'
+      - '.github/workflows/*.yaml'
+  # Monthly scheduled run (1st of each month at 00:00 UTC)
+  schedule:
+    - cron: '0 0 1 * *'
+  # Allow manual triggering for testing
+  workflow_dispatch:
+
+jobs:
+  test-workflows:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Select random reviewer
+        id: select-reviewer
+        run: |
+          reviewers=("Bai-Li-NOAA" "kellijohnson-NOAA" "Schiano-NOAA")
+          selected_reviewer=${reviewers[$RANDOM % ${#reviewers[@]}]}
+          echo "reviewer=${selected_reviewer}" >> $GITHUB_OUTPUT
+          echo "Selected reviewer: ${selected_reviewer}"
+      
+      - name: Create test issue
+        id: create-issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const reviewer = '${{ steps.select-reviewer.outputs.reviewer }}';
+            
+            // Create issue body matching the add_new_profile template
+            const issueBody = `### Welcome Message
+            
+            :clap: Welcome! :clap: [The README](https://github.com/nmfs-ost/on-off-boarding) describes the onboarding and offboarding processes for new collaborators of the Office of Science and Technology (OST). 
+            Please feel free to email your Supervisor or Project Lead if you prefer to use email instead of this GitHub issue to track your onboarding and offboarding progress.
+            
+            ### Collaborator's Full Name
+            
+            Test User (Automated Test)
+            
+            ### Desired Onboarding Date
+            
+            ${new Date().toISOString().split('T')[0]}
+            
+            ### Desired Offboarding Date
+            
+            ${new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
+            
+            ### Collaborator's Title and Affiliation
+            
+            Software Test Engineer, Automated Testing Program
+            
+            ### Biography
+            
+            This is an automated test profile created to validate the onboarding and offboarding workflows in this repository.
+            
+            ### Professional Email
+            
+            test.user@noaa.gov
+            
+            ### GitHub Username
+            
+            test-user-automated
+            
+            ### How to Use This Issue
+            
+            :bulb: **Tips**
+            - After this issue is created, onboarding or offboarding checklists may be added. Please mark items as complete as you progress.
+            - You can edit this issue to add more details about your progress by clicking the "..." button in the top-right corner of the issue. 
+            - If you have any questions or encounter any problems, please feel free to comment on this issue. 
+            
+            :tada: :tada: :tada: Thank you for your cooperation and welcome aboard!
+            
+            ---
+            
+            **Note: This is an automated test issue created by the test workflow.**`;
+            
+            let issue;
+            try {
+              issue = await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: '[Profile]: Test User (Automated Test)',
+                body: issueBody,
+                labels: ['profile', 'automated-test'],
+                assignees: [reviewer]
+              });
+            } catch (error) {
+              console.log(`Warning: Could not assign reviewer ${reviewer}: ${error.message}`);
+              // Create issue without assignee if assignment fails
+              issue = await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: '[Profile]: Test User (Automated Test)',
+                body: issueBody,
+                labels: ['profile', 'automated-test']
+              });
+            }
+            
+            console.log(`Created test issue #${issue.data.number}`);
+            return issue.data.number;
+      
+      - name: Get onboard workflows
+        id: get-onboard-workflows
+        run: |
+          cd .github/workflows
+          onboard_workflows=$(ls onboard-*.yml onboard-*.yaml 2>/dev/null | sed 's/onboard-//' | sed 's/\.yml$//' | sed 's/\.yaml$//' | tr '\n' ' ' || echo "")
+          echo "workflows=${onboard_workflows}" >> $GITHUB_OUTPUT
+          echo "Onboard workflows: ${onboard_workflows}"
+      
+      - name: Get offboard workflows
+        id: get-offboard-workflows
+        run: |
+          cd .github/workflows
+          offboard_workflows=$(ls offboard-*.yml offboard-*.yaml 2>/dev/null | sed 's/offboard-//' | sed 's/\.yml$//' | sed 's/\.yaml$//' | tr '\n' ' ' || echo "")
+          echo "workflows=${offboard_workflows}" >> $GITHUB_OUTPUT
+          echo "Offboard workflows: ${offboard_workflows}"
+      
+      - name: Test onboarding workflows
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issueNumber = ${{ steps.create-issue.outputs.result }};
+            const workflows = '${{ steps.get-onboard-workflows.outputs.workflows }}'.trim().split(' ').filter(w => w.length > 0);
+            
+            console.log(`Testing ${workflows.length} onboarding workflows on issue #${issueNumber}`);
+            
+            for (const workflow of workflows) {
+              const command = `/onboard-${workflow}`;
+              console.log(`Posting command: ${command}`);
+              
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                body: command
+              });
+              
+              // Wait 5 seconds between commands to ensure reliable triggering
+              await new Promise(resolve => setTimeout(resolve, 5000));
+            }
+      
+      - name: Wait between onboard and offboard workflows
+        run: |
+          echo "Waiting 10 seconds before starting offboard workflows..."
+          sleep 10
+      
+      - name: Test offboarding workflows
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issueNumber = ${{ steps.create-issue.outputs.result }};
+            const workflows = '${{ steps.get-offboard-workflows.outputs.workflows }}'.trim().split(' ').filter(w => w.length > 0);
+            
+            console.log(`Testing ${workflows.length} offboarding workflows on issue #${issueNumber}`);
+            
+            for (const workflow of workflows) {
+              const command = `/offboard-${workflow}`;
+              console.log(`Posting command: ${command}`);
+              
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                body: command
+              });
+              
+              // Wait 5 seconds between commands to ensure reliable triggering
+              await new Promise(resolve => setTimeout(resolve, 5000));
+            }
+      
+      - name: Add test completion comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issueNumber = ${{ steps.create-issue.outputs.result }};
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const onboardWorkflows = '${{ steps.get-onboard-workflows.outputs.workflows }}'.trim().split(' ').filter(w => w.length > 0);
+            const offboardWorkflows = '${{ steps.get-offboard-workflows.outputs.workflows }}'.trim().split(' ').filter(w => w.length > 0);
+            
+            const workflowList = [
+              '**Onboarding workflows tested** (' + onboardWorkflows.length + '):',
+              ...onboardWorkflows.map(w => `- /onboard-${w}`),
+              '',
+              '**Offboarding workflows tested** (' + offboardWorkflows.length + '):',
+              ...offboardWorkflows.map(w => `- /offboard-${w}`)
+            ].join('\n');
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              body: `:white_check_mark: **Automated workflow testing completed**\n\nAll onboarding and offboarding workflow commands have been posted to this issue. Please verify that the workflows executed correctly by checking the comments above.\n\n${workflowList}\n\n**Workflow run:** ${runUrl}\n\n**Note:** This test issue can be closed after verification.`
+            });
+            
+            console.log(`Test completed for issue #${issueNumber}`);
+            
